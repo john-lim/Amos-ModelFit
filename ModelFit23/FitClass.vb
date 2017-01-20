@@ -32,13 +32,13 @@ Public Class FitClass
         End If
 
         'Start the amos debugger and create an object from the AmosEngine
-        Dim debug As New AmosDebug.AmosDebug
-        Dim Sem As New AmosEngineLib.AmosEngine
-        Sem.NeedEstimates(SampleCorrelations)
+        Dim debug As New AmosDebug.AmosDebug 'Set up the debugger
+        Dim Sem As New AmosEngineLib.AmosEngine 'Access variables in the model such as df and Cmin
+        Sem.NeedEstimates(SampleCorrelations) 'These two are for the SRMR
         Sem.NeedEstimates(ImpliedCorrelations)
 #End Region
 
-        'Get CFI estimate from xpath expression
+        'Get CFI estimate from xpath expression. Modified version of the tutorial for xpath in the Amos Content helper updated for VB.NET from VB 6
         Dim doc As Xml.XmlDocument = New Xml.XmlDocument()
         doc.Load(AmosGraphics.pd.ProjectName & ".AmosOutput")
         Dim nsmgr As XmlNamespaceManager = New XmlNamespaceManager(doc.NameTable)
@@ -48,40 +48,79 @@ Public Class FitClass
         Dim CFI As Double = e.InnerText
         Dim tableSRC As XmlElement 'Table of body values of SRC
         Dim headSRC As XmlElement 'Table of variables
+        Dim tableRW As XmlElement 'Table of regression weights
+        'Nodes taken from the output window
         tableSRC = eRoot.SelectSingleNode("body/div/div[@ntype='models']/div[@ntype='model'][position() = 1]/div[@ntype='group'][position() = 1]/div[@ntype='estimates']/div[@ntype='matrices']/div[@ntype='ppml'][position() = 2]/table/tbody", nsmgr)
         headSRC = eRoot.SelectSingleNode("body/div/div[@ntype='models']/div[@ntype='model'][position() = 1]/div[@ntype='group'][position() = 1]/div[@ntype='estimates']/div[@ntype='matrices']/div[@ntype='ppml'][position() = 2]/table/thead", nsmgr)
+        tableRW = eRoot.SelectSingleNode("body/div/div[@ntype='models']/div[@ntype='model'][position() = 1]/div[@ntype='group'][position() = 1]/div[@ntype='estimates']/div[@ntype='scalars']/div[@nodecaption='Regression Weights:']/table/tbody", nsmgr)
 
+        'Count the observed variables in the model. Used to size arrays and loops
         Dim iObserved As Integer
         For Each a As PDElement In pd.PDElements
-            If a.IsObservedVariable Then 'Checks if the variable is latent
+            If a.IsObservedVariable Then 'Checks if the variable is observed
                 iObserved += 1 'Will return the number of variables in the model.
             End If
         Next
 
+        'The following section checks if there are at least two unobserved variables connected to the latent variable
+        'If there is less than three, the program will not recommend removing those latent variables.
+        Dim listLatent As New List(Of String)()
+        Dim iCount5 As Integer = 0
+        For Each f As PDElement In pd.PDElements
+            If f.IsLatentVariable Then
+                For d = 1 To iObserved
+                    If MatrixName(tableRW, d, 2) = f.NameOrCaption Then
+                        iCount5 += 1
+                    End If
+                Next
+                If iCount5 < 3 Then
+                    listLatent.Add(f.NameOrCaption)
+                End If
+                iCount5 = 0
+            End If
+        Next
+        'The list of latent variables with too few observed variables.
+        Dim listFew As New List(Of String)()
+        For Each latent As String In listLatent
+            For d = 1 To iObserved
+                If MatrixName(tableRW, d, 2) = latent Then
+                    listFew.Add(MatrixName(tableRW, d, 0))
+                End If
+            Next
+        Next
+
+        'These counters are used to process the standardized residual covariances table
         Dim iCount As Integer = 0
         Dim iCount2 As Integer = iObserved
         Dim iCount3 As Integer = 0
         Dim iCount4 As Integer = 1
-        Dim dictSRC As New Dictionary(Of Double, String)()
-        Dim dSum As Double
-        Dim listValues As New List(Of varSummed)
-
-        For a = 0 To iObserved - 1
-            For b = 1 To iCount2
+        Dim dSum As Double 'Stores the sum of values in the SRC
+        Dim listValues As New List(Of varSummed) 'A list of objects that will hold a string and value
+        For a = 0 To iObserved - 1 'For the number of observed variables
+            Dim varName As String = MatrixName(headSRC, 1, (a + 1))
+            For b = 1 To iCount2 'Add the column
                 dSum = dSum + Math.Abs(MatrixElement(tableSRC, (b + iCount3), (a + 1)))
             Next
-            For c = 1 To iCount4
+            For c = 1 To iCount4 'Add the row
                 dSum = dSum + Math.Abs(MatrixElement(tableSRC, (a + 1), c))
             Next
             iCount2 -= 1
             iCount3 += 1
             iCount4 += 1
-            Dim oValues As New varSummed(MatrixName(headSRC, 1, (a + 1)), dSum)
-            listValues.Add(oValues)
+            Dim oValues As New varSummed(varName, dSum) 'Assign the name of the variable and the summed value to an object
+            If Not listFew.Contains(varName) Then
+                listValues.Add(oValues) 'Add object to list
+            End If
             dSum = 0
         Next
-        listValues.Sort(Function(x, y) y.Total.CompareTo(x.Total))
-        listValues = listValues.OrderBy(Function(x) x.Total).ToList()
+        listValues = listValues.OrderBy(Function(x) x.Total).ToList() 'Sort the list of values
+
+        Dim bConstraint As Boolean = False
+        For d = 1 To iObserved
+            If MatrixName(tableRW, d, 0) = listValues.First.Name And MatrixElement(tableRW, d, 3) = 1 Then
+                bConstraint = True
+            End If
+        Next
 
         'Specify and fit the object to the model
         AmosGraphics.pd.SpecifyModel(Sem)
@@ -197,13 +236,17 @@ Public Class FitClass
         debug.PrintX("</td><td>>0.05</td><td>")
         debug.PrintX(sPclose)
         debug.PrintX("</td></tr></table><br>")
+
         If iGood = 0 And iBad = 0 Then
             debug.PrintX("Congratulations, your model fit is excellent!")
         ElseIf iGood > 0 And iBad = 0 Then
             debug.PrintX("Congratulations, your model fit is acceptable.")
         Else
+            debug.PrintX("Your model fit could improve. Based on the standardized residual covariances, we recommend removing " + listValues.First.Name + ".")
+        End If
 
-            debug.PrintX("Unfortunately, your model fit could improve. Based on the standardized residual covariances, we recommend removing " + listValues.First.Name + ".")
+        If bConstraint = True Then
+            debug.PrintX("<br>This indicator has a path constraint. You will need to change the constraint after removing " + listValues.First.Name + ".")
         End If
 
         'Write reference table and credits
