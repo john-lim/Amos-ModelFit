@@ -200,9 +200,7 @@
     <Compile Include="AssemblyInfo.vb">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="Module1.vb">
-      <SubType>Code</SubType>
-    </Compile>
+    <Compile Include="Module.vb" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="My Project\" />

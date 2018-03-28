@@ -1,4 +1,4 @@
-#Region "Imports"
+﻿#Region "Imports"
 Imports System.Diagnostics
 Imports AmosEngineLib.AmosEngine.TMatrixID
 Imports System.Xml
@@ -20,180 +20,47 @@ Public Class FitClass
         Return "Puts important measures of model fit into a table on an html document. See statwiki.kolobkreations.com for more information."
     End Function
 
+    Structure Estimates
+        'An estimates struct holds the estimates
+        Public Cmin As Double
+        Public Df As Double
+        Public CD As Double
+        Public CFI As Double
+        Public SRMR As Double
+        Public Rmsea As Double
+        Public Pclose As Double
+    End Structure
+
+    Public Shared bMid As Boolean = False
+    Public Shared bBad As Boolean = False
+    Public Shared bConstraint As Boolean = False
 
     Public Function Mainsub() As Integer Implements Amos.IPlugin.MainSub
 
-        'Fits the specified model.
-        pd.GetCheckBox("AnalysisPropertiesForm", "ModsCheck").Checked = True
-        pd.GetCheckBox("AnalysisPropertiesForm", "ResidualMomCheck").Checked = True
-        pd.AnalyzeCalculateEstimates()
+        'Ensure Mods and ResidualMom are checked
+        Amos.pd.GetCheckBox("AnalysisPropertiesForm", "ModsCheck").Checked = True
+        Amos.pd.GetCheckBox("AnalysisPropertiesForm", "ResidualMomCheck").Checked = True
 
-        'Remove the old table files
+        'Fits the specified model.
+        Amos.pd.AnalyzeCalculateEstimates()
+
+        'Produce the output
+        CreateHTML()
+
+    End Function
+
+#Region "Helper Functions"
+
+    Sub CreateHTML()
         If (System.IO.File.Exists("ModelFit.html")) Then
             System.IO.File.Delete("ModelFit.html")
         End If
 
-        'Start the amos debugger and create an object from the AmosEngine
-        Dim debug As New AmosDebug.AmosDebug 'Set up the debugger
-        Dim Sem As New AmosEngineLib.AmosEngine 'Access variables in the model such as df and Cmin
-        Sem.NeedEstimates(SampleCorrelations) 'These two are for the SRMR
-        Sem.NeedEstimates(ImpliedCorrelations)
-
-        'Get CFI estimate from xpath expression. Modified version of the tutorial for xpath in the Amos Content helper updated for VB.NET from VB 6
-        Dim baseline As XmlElement = GetXML("body/div/div[@ntype='modelfit']/div[@nodecaption='Baseline Comparisons']/table/tbody/tr[position() = 1]/td[position() = 6]")
-        Dim CFI As Double = baseline.InnerText
-        Dim tableSRC As XmlElement = GetXML("body/div/div[@ntype='models']/div[@ntype='model'][position() = 1]/div[@ntype='group'][position() = 1]/div[@ntype='estimates']/div[@ntype='matrices']/div[@ntype='ppml'][position() = 2]/table/tbody")
-        Dim headSRC As XmlElement = GetXML("body/div/div[@ntype='models']/div[@ntype='model'][position() = 1]/div[@ntype='group'][position() = 1]/div[@ntype='estimates']/div[@ntype='matrices']/div[@ntype='ppml'][position() = 2]/table/thead")
-        Dim tableRW As XmlElement = GetXML("body/div/div[@ntype='models']/div[@ntype='model'][position() = 1]/div[@ntype='group'][position() = 1]/div[@ntype='estimates']/div[@ntype='scalars']/div[@nodecaption='Regression Weights:']/table/tbody")
-
-        'Count the observed variables in the model. Used to size arrays and loops
-        Dim iObserved As Integer
-        For Each a As PDElement In pd.PDElements
-            If a.IsObservedVariable Then 'Checks if the variable is observed
-                iObserved += 1 'Will return the number of variables in the model.
-            End If
-        Next
-
-        'The following section checks if there are at least two unobserved variables connected to the latent variable
-        'If there is less than three, the program will not recommend removing those latent variables.
-        Dim listLatent As New List(Of String)()
-        Dim iCount5 As Integer = 0
-        For Each f As PDElement In pd.PDElements
-            If f.IsLatentVariable Then
-                For d = 1 To iObserved
-                    If MatrixName(tableRW, d, 2) = f.NameOrCaption Then
-                        iCount5 += 1
-                    End If
-                Next
-                If iCount5 < 3 Then
-                    listLatent.Add(f.NameOrCaption)
-                End If
-                iCount5 = 0
-            End If
-        Next
-
-        'The list of latent variables with too few observed variables.
-        Dim listFew As New List(Of String)()
-        For Each latent As String In listLatent
-            For d = 1 To iObserved
-                If MatrixName(tableRW, d, 2) = latent Then
-                    listFew.Add(MatrixName(tableRW, d, 0))
-                End If
-            Next
-        Next
-
-        'These counters are used to process the standardized residual covariances table
-        Dim iCount As Integer = 0
-        Dim iCount2 As Integer = iObserved
-        Dim iCount3 As Integer = 0
-        Dim iCount4 As Integer = 1
-        Dim dSum As Double 'Stores the sum of values in the SRC
-        Dim listValues As New List(Of varSummed) 'A list of objects that will hold a string and value
-        For w = 0 To iObserved - 1 'For the number of observed variables
-            Dim varName As String = MatrixName(headSRC, 1, (w + 1))
-            For b = 1 To iCount2 'Add the column
-                dSum = dSum + Math.Abs(MatrixElement(tableSRC, (b + iCount3), (w + 1)))
-            Next
-            For c = 1 To iCount4 'Add the row
-                dSum = dSum + Math.Abs(MatrixElement(tableSRC, (w + 1), c))
-            Next
-            iCount2 -= 1
-            iCount3 += 1
-            iCount4 += 1
-            Dim oValues As New varSummed(varName, dSum) 'Assign the name of the variable and the summed value to an object
-            If Not listFew.Contains(varName) Then
-                listValues.Add(oValues) 'Add object to list
-            End If
-            dSum = 0
-        Next
-        listValues = listValues.OrderBy(Function(x) x.Total).ToList() 'Sort the list of values
-
-        Dim bConstraint As Boolean = False
-        For d = 1 To iObserved
-            If MatrixName(tableRW, d, 0) = listValues.First.Name And MatrixElement(tableRW, d, 3) = 1 Then
-                bConstraint = True
-            End If
-        Next
-
-        'Specify and fit the object to the model
-        Amos.pd.SpecifyModel(Sem)
-        Sem.FitModel()
-
-        'Calculate SRMR
-        Dim N As Integer
-        Dim i As Integer
-        Dim j As Integer
-        Dim DTemp As Double
-        Dim Sample(,) As Double
-        Dim Implied(,) As Double
-        Sem.GetEstimates(SampleCorrelations, Sample)
-        Sem.GetEstimates(ImpliedCorrelations, Implied)
-        N = UBound(Sample, 1) + 1
-        DTemp = 0
-        For i = 1 To N - 1
-            For j = 0 To i - 1
-                DTemp = DTemp + (Sample(i, j) - Implied(i, j)) ^ 2
-            Next
-        Next
-        DTemp = System.Math.Sqrt(DTemp / (N * (N - 1) / 2))
-
-        Dim CD As Double = Sem.Cmin / Sem.Df
-
-        'Conditionals for interpretation column
-        Dim sCD As String = ""
-        Dim sCFI As String = ""
-        Dim sSRMR As String = ""
-        Dim sRMSEA As String = ""
-        Dim sPclose As String = ""
-        Dim iBad As Integer = 0
-        Dim iGood As Integer = 0
-        If CD > 5 Then
-            sCD = "Terrible"
-            iBad += 1
-        ElseIf CD > 3 Then
-            sCD = "Acceptable"
-            iGood += 1
-        Else
-            sCD = "Excellent"
-        End If
-        If CFI > 0.95 Then
-            sCFI = "Excellent"
-        ElseIf CFI >= 0.9 Then
-            sCFI = "Acceptable"
-            iGood += 1
-        Else
-            sCFI = "Need More DF"
-            iBad += 1
-        End If
-        If DTemp < 0.08 Then
-            sSRMR = "Excellent"
-        ElseIf DTemp <= 0.1 Then
-            sSRMR = "Acceptable"
-            iGood += 1
-        Else
-            sSRMR = "Terrible"
-            iBad += 1
-        End If
-        If Sem.Rmsea < 0.06 Then
-            sRMSEA = "Excellent"
-        ElseIf Sem.Rmsea <= 0.08 Then
-            sRMSEA = "Acceptable"
-            iGood += 1
-        Else
-            sRMSEA = "Terrible"
-            iBad += 1
-        End If
-        If Sem.Pclose > 0.05 Then
-            sPclose = "Excellent"
-        ElseIf Sem.Pclose > 0.01 Then
-            sPclose = "Acceptable"
-            iGood += 1
-        Else
-            sPclose = "Terrible"
-            iBad += 1
-        End If
+        Dim estimates As Estimates = GetEstimates()
+        Dim listValues As List(Of varSummed) = GetLowestIndicator()
 
         'Set up the listener To output the debugs
+        Dim debug As New AmosDebug.AmosDebug
         Dim resultWriter As New TextWriterTraceListener("ModelFit.html")
         Trace.Listeners.Add(resultWriter)
 
@@ -202,37 +69,19 @@ Public Class FitClass
 
         'Populate model fit measures in data table
         debug.PrintX("<table><tr><th>Measure</th><th>Estimate</th><th>Threshold</th><th>Interpretation</th></tr>")
-        debug.PrintX("<tr><td>CMIN</td><td>")
-        debug.PrintX(Sem.Cmin.ToString("#0.000"))
-        debug.PrintX("</td><td>--</td><td>--</td></tr>")
-        debug.PrintX("<tr><td>DF</td><td>")
-        debug.PrintX(Sem.Df)
-        debug.PrintX("</td><td>--</td><td>--</td></tr>")
-        debug.PrintX("<tr><td>CMIN/DF</td><td>")
-        debug.PrintX(CD.ToString("#0.000"))
-        debug.PrintX("</td><td>Between 1 and 3</td><td>")
-        debug.PrintX(sCD)
-        debug.PrintX("</td></tr><tr><td>CFI</td><td>")
-        debug.PrintX(CFI.ToString("#0.000"))
-        debug.PrintX("</td><td>>0.95</td><td>")
-        debug.PrintX(sCFI)
-        debug.PrintX("</td></tr><tr><td>SRMR</td><td>")
-        debug.PrintX(DTemp.ToString("#0.000"))
-        debug.PrintX("</td><td><0.08</td><td>")
-        debug.PrintX(sSRMR)
-        debug.PrintX("</td></tr><tr><td>RMSEA</td><td>")
-        debug.PrintX(Sem.Rmsea.ToString("#0.000"))
-        debug.PrintX("</td><td><0.06</td><td>")
-        debug.PrintX(sRMSEA)
-        debug.PrintX("</td></tr><tr><td>PClose</td><td>")
-        debug.PrintX(Sem.Pclose.ToString("#0.000"))
-        debug.PrintX("</td><td>>0.05</td><td>")
-        debug.PrintX(sPclose)
-        debug.PrintX("</td></tr></table><br>")
 
-        If iGood = 0 And iBad = 0 Then
+        debug.PrintX("<tr><td>CMIN</td><td>" + estimates.Cmin.ToString("#0.000") + "</td><td>--</td><td>--</td></tr>")
+        debug.PrintX("<tr><td>DF</td><td>" + estimates.Df.ToString("#0.000") + "</td><td>--</td><td>--</td></tr>")
+        debug.PrintX("<tr><td>CMIN/DF</td><td>" + estimates.CD.ToString("#0.000") + "</td><td>Between 1 and 3</td><td>" + interpret(1, 3, 5, estimates.CD, True) + "</td></tr>")
+        debug.PrintX("<tr><td>CFI</td><td>" + estimates.CFI.ToString("#0.000") + "</td><td>>0.95</td><td>" + interpret(0.95, 0.9, 0, estimates.CFI, False) + "</td></tr>")
+        debug.PrintX("<tr><td>SRMR</td><td>" + estimates.SRMR.ToString("#0.000") + "</td><td><0.08</td><td>" + interpret(0, 0.08, 0.1, estimates.SRMR, False) + "</td></tr>")
+        debug.PrintX("<tr><td>RMSEA</td><td>" + estimates.Rmsea.ToString("#0.000") + "</td><td><0.06</td><td>" + interpret(0, 0.06, 0.08, estimates.Rmsea, False) + "</td></tr>")
+        debug.PrintX("<tr><td>PClose</td><td>" + estimates.Pclose.ToString("#0.000") + "</td><td>>0.05</td><td>" + interpret(0.05, 0.01, 0, estimates.Pclose, False) + "</td></tr></table><br>")
+
+        'Check standardized residual covariances table for the indicator with largest sum of absolute values.
+        If bMid = False And bBad = False Then
             debug.PrintX("Congratulations, your model fit is excellent!")
-        ElseIf iGood > 0 And iBad = 0 Then
+        ElseIf bMid = True And bBad = False Then
             debug.PrintX("Congratulations, your model fit is acceptable.")
         Else
             debug.PrintX("Your model fit could improve. Based on the standardized residual covariances, we recommend removing " + listValues.First.Name + ".")
@@ -262,12 +111,155 @@ Public Class FitClass
         Trace.Listeners.Remove(resultWriter)
         resultWriter.Close()
         resultWriter.Dispose()
-        Sem.Dispose()
         Process.Start("ModelFit.html")
+    End Sub
+
+    Function GetEstimates() As Estimates
+
+        'Array to hold estimates
+        Dim estimates As Estimates
+
+        'Get CFI from Baseline Comparisions table
+        Dim CFI As XmlElement = GetXML("body/div/div[@ntype='modelfit']/div[@nodecaption='Baseline Comparisons']/table/tbody/tr[position() = 1]/td[position() = 6]")
+
+        'Specify and fit the object to the model
+        Dim Sem As New AmosEngineLib.AmosEngine
+        Sem.NeedEstimates(SampleCorrelations)
+        Sem.NeedEstimates(ImpliedCorrelations)
+        Amos.pd.SpecifyModel(Sem)
+        Sem.FitModel()
+
+        'Calculate SRMR
+        Dim N As Integer
+        Dim i As Integer
+        Dim j As Integer
+        Dim SRMR As Double
+        Dim Sample(,) As Double
+        Dim Implied(,) As Double
+        Sem.GetEstimates(SampleCorrelations, Sample)
+        Sem.GetEstimates(ImpliedCorrelations, Implied)
+        N = UBound(Sample, 1) + 1
+        SRMR = 0
+        For i = 1 To N - 1
+            For j = 0 To i - 1
+                SRMR = SRMR + (Sample(i, j) - Implied(i, j)) ^ 2
+            Next
+        Next
+        SRMR = System.Math.Sqrt(SRMR / (N * (N - 1) / 2))
+
+        estimates.Cmin = Sem.Cmin
+        estimates.Df = Sem.Df
+        estimates.CD = Sem.Cmin / Sem.Df
+        estimates.CFI = CFI.InnerText
+        estimates.SRMR = SRMR
+        estimates.Rmsea = Sem.Rmsea
+        estimates.Pclose = Sem.Pclose
+
+        Sem.Dispose()
+
+        Return estimates
 
     End Function
 
-#Region "Helper Functions"
+    Function GetLowestIndicator() As List(Of varSummed)
+        Dim tableSRC As XmlElement = GetXML("body/div/div[@ntype='models']/div[@ntype='model'][position() = 1]/div[@ntype='group'][position() = 1]/div[@ntype='estimates']/div[@ntype='matrices']/div[@ntype='ppml'][position() = 2]/table/tbody")
+        Dim headSRC As XmlElement = GetXML("body/div/div[@ntype='models']/div[@ntype='model'][position() = 1]/div[@ntype='group'][position() = 1]/div[@ntype='estimates']/div[@ntype='matrices']/div[@ntype='ppml'][position() = 2]/table/thead")
+        Dim tableRW As XmlElement = GetXML("body/div/div[@ntype='models']/div[@ntype='model'][position() = 1]/div[@ntype='group'][position() = 1]/div[@ntype='estimates']/div[@ntype='scalars']/div[@nodecaption='Regression Weights:']/table/tbody")
+
+        Dim observedVariables As New ArrayList
+        For Each variable As PDElement In pd.PDElements
+            If variable.IsObservedVariable Then
+                observedVariables.Add(variable)
+            End If
+        Next
+
+        Dim numObserved As Integer = observedVariables.Count
+
+        'The following section checks if there are at least two unobserved variables connected to the latent variable
+        Dim unavailableLatent As New ArrayList
+
+        For Each variable As PDElement In pd.PDElements
+            Dim numRW As Integer = 0
+            If variable.IsLatentVariable Then
+                For i = 1 To numObserved
+                    If MatrixName(tableRW, i, 2) = variable.NameOrCaption Then
+                        numRW += 1
+                    End If
+                Next
+                'If there is less than three, the program will not recommend removing those latent variables.
+                If numRW < 3 Then
+                    unavailableLatent.Add(variable.NameOrCaption)
+                End If
+            End If
+        Next
+
+        'The list of latent variables with too few observed variables.
+        Dim unavailableObserved As New ArrayList
+        For Each latent As String In unavailableLatent
+            For d = 1 To observedVariables.Count
+                If MatrixName(tableRW, d, 2) = latent Then
+                    unavailableObserved.Add(MatrixName(tableRW, d, 0))
+                End If
+            Next
+        Next
+
+        'These counters are used to process the standardized residual covariances table
+        Dim column As Integer = 0
+        Dim rowOffset As Integer = 0
+        Dim row As Integer = 1
+        Dim dSum As Double 'Stores the sum of values in the SRC
+        Dim listValues As New List(Of varSummed) 'A list of objects that will hold a string and value
+        For i = 0 To numObserved - 1 'For the number of observed variables
+            Dim varName As String = MatrixName(headSRC, 1, (i + 1))
+            For b = 1 To column 'Add the column
+                dSum = dSum + Math.Abs(MatrixElement(tableSRC, (b + rowOffset), (i + 1)))
+            Next
+            For c = 1 To row 'Add the row
+                dSum = dSum + Math.Abs(MatrixElement(tableSRC, (i + 1), c))
+            Next
+            column -= 1
+            rowOffset += 1
+            row += 1
+            Dim oValues As New varSummed(varName, dSum) 'Assign the name of the variable and the summed value to an object
+            If Not unavailableObserved.Contains(varName) Then
+                listValues.Add(oValues) 'Add object to list
+            End If
+            dSum = 0
+        Next
+        listValues = listValues.OrderBy(Function(x) x.Total).ToList() 'Sort the list of values
+
+        For d = 1 To numObserved
+            If MatrixName(tableRW, d, 0) = listValues.First.Name And MatrixElement(tableRW, d, 3) = 1 Then
+                bConstraint = True
+            End If
+        Next
+
+        Return listValues
+
+    End Function
+
+    '
+    Function interpret(good As Double, mid As Double, bad As Double, estimate As Double, dfCheck As Boolean) As String
+        Dim interpretation As String
+        'IF CMIN/DF < 1 Then needs more DF
+        Select Case estimate
+            Case Is > good
+                interpretation = "Excellent"
+            Case Is > mid
+                interpretation = "Acceptable"
+                bMid = True
+            Case Is < 1 And dfCheck = True
+                interpretation = "Need more DF"
+                bBad = True
+            Case Is = Nothing
+                interpretation = "Not Estimated"
+            Case Else
+                interpretation = "Terrible"
+                bBad = True
+        End Select
+
+        interpret = interpretation
+    End Function
 
     'Use an output table path to get the xml version of the table.
     Public Function GetXML(path As String) As XmlElement
