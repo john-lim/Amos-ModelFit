@@ -72,11 +72,74 @@ Public Class FitClass
 
         debug.PrintX("<tr><td>CMIN</td><td>" + estimates.Cmin.ToString("#0.000") + "</td><td>--</td><td>--</td></tr>")
         debug.PrintX("<tr><td>DF</td><td>" + estimates.Df.ToString("#0.000") + "</td><td>--</td><td>--</td></tr>")
-        debug.PrintX("<tr><td>CMIN/DF</td><td>" + estimates.CD.ToString("#0.000") + "</td><td>Between 1 and 3</td><td>" + interpret(1, 3, 5, estimates.CD, True) + "</td></tr>")
-        debug.PrintX("<tr><td>CFI</td><td>" + estimates.CFI.ToString("#0.000") + "</td><td>>0.95</td><td>" + interpret(0.95, 0.9, 0, estimates.CFI, False) + "</td></tr>")
-        debug.PrintX("<tr><td>SRMR</td><td>" + estimates.SRMR.ToString("#0.000") + "</td><td><0.08</td><td>" + interpret(0, 0.08, 0.1, estimates.SRMR, False) + "</td></tr>")
-        debug.PrintX("<tr><td>RMSEA</td><td>" + estimates.Rmsea.ToString("#0.000") + "</td><td><0.06</td><td>" + interpret(0, 0.06, 0.08, estimates.Rmsea, False) + "</td></tr>")
-        debug.PrintX("<tr><td>PClose</td><td>" + estimates.Pclose.ToString("#0.000") + "</td><td>>0.05</td><td>" + interpret(0.05, 0.01, 0, estimates.Pclose, False) + "</td></tr></table><br>")
+        debug.PrintX("<tr><td>CMIN/DF</td><td>" + estimates.CD.ToString("#0.000") + "</td><td>Between 1 and 3</td><td>")
+
+        If estimates.CD < 1 Then
+            debug.PrintX("Need more DF</td></tr>")
+        ElseIf estimates.CD >= 1 And estimates.CD <= 3 Then
+            debug.PrintX("Excellent</td></tr>")
+        ElseIf estimates.CD <= 5 Then
+            debug.PrintX("Acceptable</td></tr>")
+        ElseIf estimates.CD = Nothing Then
+            debug.PrintX("Not Estimated</td></tr>")
+        Else
+            debug.PrintX("Terrible</td></tr>")
+            bBad = True
+        End If
+
+        debug.PrintX("<tr><td>CFI</td><td>" + estimates.CFI.ToString("#0.000") + "</td><td>>0.95</td><td>")
+
+        If estimates.CFI > 0.95 Then
+            debug.PrintX("Excellent</td></tr>")
+        ElseIf estimates.CFI > 0.9 Then
+            debug.PrintX("Acceptable</td></tr>")
+        ElseIf estimates.CFI = Nothing Then
+            debug.PrintX("Not Estimated</td></tr>")
+        Else
+            debug.PrintX("Terrible</td></tr>")
+            bBad = True
+        End If
+
+        debug.PrintX("<tr><td>SRMR</td><td>" + estimates.SRMR.ToString("#0.000") + "</td><td><0.08</td><td>")
+
+        If estimates.SRMR < 0.08 Then
+            debug.PrintX("Excellent</td></tr>")
+        ElseIf estimates.SRMR < 0.1 Then
+            debug.PrintX("Acceptable</td></tr>")
+        ElseIf estimates.SRMR = Nothing Then
+            debug.PrintX("Not Estimated</td></tr>")
+        Else
+            debug.PrintX("Terrible</td></tr>")
+            bBad = True
+        End If
+
+        debug.PrintX("<tr><td>RMSEA</td><td>" + estimates.Rmsea.ToString("#0.000") + "</td><td><0.06</td><td>")
+
+        If estimates.Rmsea < 0.06 Then
+            debug.PrintX("Excellent</td></tr>")
+        ElseIf estimates.Rmsea < 0.08 Then
+            debug.PrintX("Acceptable</td></tr>")
+        ElseIf estimates.Rmsea = Nothing Then
+            debug.PrintX("Not Estimated</td></tr>")
+        Else
+            debug.PrintX("Terrible</td></tr>")
+            bBad = True
+        End If
+
+        debug.PrintX("<tr><td>PClose</td><td>" + estimates.Pclose.ToString("#0.000") + "</td><td>>0.05</td><td>")
+
+        If estimates.Pclose > 0.05 Then
+            debug.PrintX("Excellent</td></tr>")
+        ElseIf estimates.Pclose > 0.01 Then
+            debug.PrintX("Acceptable</td></tr>")
+        ElseIf estimates.Pclose = Nothing Then
+            debug.PrintX("Not Estimated</td></tr>")
+        Else
+            debug.PrintX("Terrible</td></tr>")
+            bBad = True
+        End If
+
+        debug.PrintX("</table><br>")
 
         'Check standardized residual covariances table for the indicator with largest sum of absolute values.
         If bMid = False And bBad = False Then
