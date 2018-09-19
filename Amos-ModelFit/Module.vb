@@ -31,21 +31,46 @@ Public Class FitClass
         Public Pclose As Double
     End Structure
 
+    Structure DualEstimates
+        Public Cmin As Double
+        Public CFI As Double
+    End Structure
+
     Public Shared bMid As Boolean = False
     Public Shared bBad As Boolean = False
     Public Shared bConstraint As Boolean = False
 
     Public Function Mainsub() As Integer Implements Amos.IPlugin.MainSub
 
-        'Ensure Mods and ResidualMom are checked
-        Amos.pd.GetCheckBox("AnalysisPropertiesForm", "ModsCheck").Checked = True
-        Amos.pd.GetCheckBox("AnalysisPropertiesForm", "ResidualMomCheck").Checked = True
+        Dim intButton As Integer
+        intButton = MsgBox("Does your data file have missing data?", 3, "Missing Data Check")
 
-        'Fits the specified model.
-        Amos.pd.AnalyzeCalculateEstimates()
+        If intButton = 6 Then
+            'Uncheck Mods and check means and intercepts
+            Amos.pd.GetCheckBox("AnalysisPropertiesForm", "ModsCheck").Checked = False
+            Amos.pd.GetCheckBox("AnalysisPropertiesForm", "MeansInterceptsCheck").Checked = True
 
-        'Produce the output
-        CreateHTML()
+            'Fits the specified model.
+            Amos.pd.AnalyzeCalculateEstimates()
+
+            'Produce the output
+            LessHTML()
+
+        ElseIf intButton = 7 Then
+            'Ensure Mods and ResidualMom are checked
+            Amos.pd.GetCheckBox("AnalysisPropertiesForm", "ModsCheck").Checked = True
+            Amos.pd.GetCheckBox("AnalysisPropertiesForm", "ResidualMomCheck").Checked = True
+
+            'Fits the specified model.
+            Amos.pd.AnalyzeCalculateEstimates()
+
+            'Produce the output
+            CreateHTML()
+        Else
+            Exit Function
+        End If
+
+
 
     End Function
 
@@ -57,6 +82,7 @@ Public Class FitClass
         End If
 
         Dim estimates As Estimates = GetEstimates()
+
         Dim listValues As List(Of varSummed) = GetLowestIndicator()
 
         'Set up the listener To output the debugs
@@ -177,6 +203,76 @@ Public Class FitClass
         Process.Start("ModelFit.html")
     End Sub
 
+    Sub LessHTML()
+        If (System.IO.File.Exists("ModelFit.html")) Then
+            System.IO.File.Delete("ModelFit.html")
+        End If
+
+        Dim estimates As DualEstimates = DualData()
+
+        Dim listValues As List(Of varSummed) = GetLowestIndicator()
+
+        'Set up the listener To output the debugs
+        Dim debug As New AmosDebug.AmosDebug
+        Dim resultWriter As New TextWriterTraceListener("ModelFit.html")
+        Trace.Listeners.Add(resultWriter)
+
+        'Write the beginning Of the document
+        debug.PrintX("<html><body><h1>Model Fit Measures</h1><hr/>")
+
+        'Populate model fit measures in data table
+        debug.PrintX("<table><tr><th>Measure</th><th>Estimate</th><th>Threshold</th><th>Interpretation</th></tr>")
+
+        debug.PrintX("<tr><td>CMIN</td><td>" + estimates.Cmin.ToString("#0.000") + "</td><td>--</td><td>--</td></tr>")
+
+        debug.PrintX("<tr><td>CFI</td><td>" + estimates.CFI.ToString("#0.000") + "</td><td>>0.95</td><td>")
+
+        If estimates.CFI > 0.95 Then
+            debug.PrintX("Excellent</td></tr>")
+        ElseIf estimates.CFI > 0.9 Then
+            debug.PrintX("Acceptable</td></tr>")
+        ElseIf estimates.CFI = Nothing Then
+            debug.PrintX("Not Estimated</td></tr>")
+        Else
+            debug.PrintX("Terrible</td></tr>")
+            bBad = True
+        End If
+
+        debug.PrintX("</table><br>")
+
+        'Check standardized residual covariances table for the indicator with largest sum of absolute values.
+        If bMid = False And bBad = False Then
+            debug.PrintX("Congratulations, your model fit is excellent!")
+        ElseIf bMid = True And bBad = False Then
+            debug.PrintX("Congratulations, your model fit is acceptable.")
+        Else
+            debug.PrintX("Your model fit could improve. Based on the standardized residual covariances, we recommend removing " + listValues.First.Name + ".")
+        End If
+
+        If bConstraint = True Then
+            debug.PrintX("<br>This indicator has a path constraint. You will need to change the constraint after removing " + listValues.First.Name + ".")
+        End If
+
+        'Write reference table and credits
+        debug.PrintX("<hr/><h3> Cutoff Criteria*</h3><table><tr><th>Measure</th><th>Terrible</th><th>Acceptable</th><th>Excellent</th></tr>")
+        debug.PrintX("<tr><td>CMIN/DF</td><td>> 5</td><td>> 3</td><td>> 1</td></tr>")
+        debug.PrintX("</td></tr><tr><td>CFI</td><td><0.90</td><td><0.95</td><td>>0.95</td></tr></table>")
+        debug.PrintX("<p>*Note: Hu and Bentler (1999, ""Cutoff Criteria for Fit Indexes in Covariance Structure Analysis: Conventional Criteria Versus New Alternatives"") recommend combinations of measures. Personally, I prefer a combination of CFI>0.95 and SRMR<0.08. To further solidify evidence, add the RMSEA<0.06.</p>")
+        debug.PrintX("<p>**If you would like to cite this tool directly, please use the following:")
+        debug.PrintX("Gaskin, J. & Lim, J. (2016), ""Model Fit Measures"", AMOS Plugin. <a href=\""http://statwiki.kolobkreations.com"">Gaskination's StatWiki</a>.</p>")
+
+        'Write Style And close
+        debug.PrintX("<style>h1{margin-left:60px;}table{border:1px solid black;border-collapse:collapse;}td{border:1px solid black;text-align:center;padding:5px;}th{text-weight:bold;padding:10px;border: 1px solid black;}</style>")
+        debug.PrintX("</body></html>")
+
+        'Take down our debugging, release file, open html
+        Trace.Flush()
+        Trace.Listeners.Remove(resultWriter)
+        resultWriter.Close()
+        resultWriter.Dispose()
+        Process.Start("ModelFit.html")
+    End Sub
+
     Function GetEstimates() As Estimates
 
         'Array to hold estimates
@@ -199,6 +295,7 @@ Public Class FitClass
         Dim SRMR As Double
         Dim Sample(,) As Double
         Dim Implied(,) As Double
+
         Sem.GetEstimates(SampleCorrelations, Sample)
         Sem.GetEstimates(ImpliedCorrelations, Implied)
         N = UBound(Sample, 1) + 1
@@ -222,6 +319,26 @@ Public Class FitClass
 
         Return estimates
 
+    End Function
+
+    Function DualData() As DualEstimates
+        'Array to hold estimates
+        Dim estimates As DualEstimates
+
+        'Get CFI from Baseline Comparisions table
+        Dim CFI As XmlElement = GetXML("body/div/div[@ntype='modelfit']/div[@nodecaption='Baseline Comparisons']/table/tbody/tr[position() = 1]/td[position() = 6]")
+
+        'Specify and fit the object to the model
+        Dim Sem As New AmosEngineLib.AmosEngine
+        Amos.pd.SpecifyModel(Sem)
+        Sem.FitModel()
+
+        estimates.Cmin = Sem.Cmin
+        estimates.CFI = CFI.InnerText
+
+        Sem.Dispose()
+
+        Return estimates
     End Function
 
     Function GetLowestIndicator() As List(Of varSummed)
