@@ -33,7 +33,11 @@ Public Class FitClass
 
     Structure DualEstimates
         Public Cmin As Double
+        Public Df As Double
         Public CFI As Double
+        Public CD As Double
+        Public Rmsea As Double
+        Public Pclose As Double
     End Structure
 
     Public Shared bMid As Boolean = False
@@ -208,7 +212,7 @@ Public Class FitClass
             System.IO.File.Delete("ModelFit.html")
         End If
 
-        Dim estimates As DualEstimates = DualData()
+        Dim estimates As Estimates = GetEstimates()
 
         Dim listValues As List(Of varSummed) = GetLowestIndicator()
 
@@ -224,6 +228,21 @@ Public Class FitClass
         debug.PrintX("<table><tr><th>Measure</th><th>Estimate</th><th>Threshold</th><th>Interpretation</th></tr>")
 
         debug.PrintX("<tr><td>CMIN</td><td>" + estimates.Cmin.ToString("#0.000") + "</td><td>--</td><td>--</td></tr>")
+        debug.PrintX("<tr><td>DF</td><td>" + estimates.Df.ToString("#0.000") + "</td><td>--</td><td>--</td></tr>")
+        debug.PrintX("<tr><td>CMIN/DF</td><td>" + estimates.CD.ToString("#0.000") + "</td><td>Between 1 and 3</td><td>")
+
+        If estimates.CD < 1 Then
+            debug.PrintX("Need more DF</td></tr>")
+        ElseIf estimates.CD >= 1 And estimates.CD <= 3 Then
+            debug.PrintX("Excellent</td></tr>")
+        ElseIf estimates.CD <= 5 Then
+            debug.PrintX("Acceptable</td></tr>")
+        ElseIf estimates.CD = Nothing Then
+            debug.PrintX("Not Estimated</td></tr>")
+        Else
+            debug.PrintX("Terrible</td></tr>")
+            bBad = True
+        End If
 
         debug.PrintX("<tr><td>CFI</td><td>" + estimates.CFI.ToString("#0.000") + "</td><td>>0.95</td><td>")
 
@@ -232,6 +251,32 @@ Public Class FitClass
         ElseIf estimates.CFI > 0.9 Then
             debug.PrintX("Acceptable</td></tr>")
         ElseIf estimates.CFI = Nothing Then
+            debug.PrintX("Not Estimated</td></tr>")
+        Else
+            debug.PrintX("Terrible</td></tr>")
+            bBad = True
+        End If
+
+        debug.PrintX("<tr><td>RMSEA</td><td>" + estimates.Rmsea.ToString("#0.000") + "</td><td><0.06</td><td>")
+
+        If estimates.Rmsea < 0.06 Then
+            debug.PrintX("Excellent</td></tr>")
+        ElseIf estimates.Rmsea < 0.08 Then
+            debug.PrintX("Acceptable</td></tr>")
+        ElseIf estimates.Rmsea = Nothing Then
+            debug.PrintX("Not Estimated</td></tr>")
+        Else
+            debug.PrintX("Terrible</td></tr>")
+            bBad = True
+        End If
+
+        debug.PrintX("<tr><td>PClose</td><td>" + estimates.Pclose.ToString("#0.000") + "</td><td>>0.05</td><td>")
+
+        If estimates.Pclose > 0.05 Then
+            debug.PrintX("Excellent</td></tr>")
+        ElseIf estimates.Pclose > 0.01 Then
+            debug.PrintX("Acceptable</td></tr>")
+        ElseIf estimates.Pclose = Nothing Then
             debug.PrintX("Not Estimated</td></tr>")
         Else
             debug.PrintX("Terrible</td></tr>")
@@ -256,7 +301,9 @@ Public Class FitClass
         'Write reference table and credits
         debug.PrintX("<hr/><h3> Cutoff Criteria*</h3><table><tr><th>Measure</th><th>Terrible</th><th>Acceptable</th><th>Excellent</th></tr>")
         debug.PrintX("<tr><td>CMIN/DF</td><td>> 5</td><td>> 3</td><td>> 1</td></tr>")
-        debug.PrintX("</td></tr><tr><td>CFI</td><td><0.90</td><td><0.95</td><td>>0.95</td></tr></table>")
+        debug.PrintX("</td></tr><tr><td>CFI</td><td><0.90</td><td><0.95</td><td>>0.95</td></tr>")
+        debug.PrintX("</td></tr><tr><td>RMSEA</td><td>>0.08</td><td>>0.06</td><td><0.06</td></tr>")
+        debug.PrintX("</td></tr><tr><td>PClose</td><td><0.01</td><td><0.05</td><td>>0.05</td></tr></table>")
         debug.PrintX("<p>*Note: Hu and Bentler (1999, ""Cutoff Criteria for Fit Indexes in Covariance Structure Analysis: Conventional Criteria Versus New Alternatives"") recommend combinations of measures. Personally, I prefer a combination of CFI>0.95 and SRMR<0.08. To further solidify evidence, add the RMSEA<0.06.</p>")
         debug.PrintX("<p>**If you would like to cite this tool directly, please use the following:")
         debug.PrintX("Gaskin, J. & Lim, J. (2016), ""Model Fit Measures"", AMOS Plugin. <a href=\""http://statwiki.kolobkreations.com"">Gaskination's StatWiki</a>.</p>")
@@ -334,7 +381,10 @@ Public Class FitClass
         Sem.FitModel()
 
         estimates.Cmin = Sem.Cmin
+        estimates.Df = Sem.Df
         estimates.CFI = CFI.InnerText
+        estimates.Rmsea = Sem.Rmsea
+        estimates.Pclose = Sem.Pclose
 
         Sem.Dispose()
 

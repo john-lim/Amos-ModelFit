@@ -7,3 +7,5 @@ C:\Users\johnh\Downloads\Amos-ModelFit\Amos-ModelFit\obj\Debug\Amos-ModelFit.dll
 C:\Users\johnh\Downloads\Amos-ModelFit\Amos-ModelFit\obj\Debug\Amos-ModelFit.pdb
 C:\Users\johnh\Desktop\Research\Amos-ModelFit\Amos-ModelFit\obj\Debug\Amos-ModelFit.dll
 C:\Users\johnh\Desktop\Research\Amos-ModelFit\Amos-ModelFit\obj\Debug\Amos-ModelFit.pdb
+C:\Users\johnh\Source\Repos\Amos-ModelFit\Amos-ModelFit\obj\Debug\Amos-ModelFit.dll
+C:\Users\johnh\Source\Repos\Amos-ModelFit\Amos-ModelFit\obj\Debug\Amos-ModelFit.pdb
