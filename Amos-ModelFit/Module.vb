@@ -74,8 +74,6 @@ Public Class FitClass
             Exit Function
         End If
 
-
-
     End Function
 
 #Region "Helper Functions"
