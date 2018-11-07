@@ -31,18 +31,10 @@ Public Class FitClass
         Public Pclose As Double
     End Structure
 
-    Structure DualEstimates
-        Public Cmin As Double
-        Public Df As Double
-        Public CFI As Double
-        Public CD As Double
-        Public Rmsea As Double
-        Public Pclose As Double
-    End Structure
-
     Public Shared bMid As Boolean = False
     Public Shared bBad As Boolean = False
     Public Shared bConstraint As Boolean = False
+    Public Shared bMissingData As Boolean = False
 
     Public Function Mainsub() As Integer Implements Amos.IPlugin.MainSub
 
@@ -50,16 +42,13 @@ Public Class FitClass
         intButton = MsgBox("Does your data file have missing data?", 3, "Missing Data Check")
 
         If intButton = 6 Then
+            bMissingData = True
             'Uncheck Mods and check means and intercepts
             Amos.pd.GetCheckBox("AnalysisPropertiesForm", "ModsCheck").Checked = False
             Amos.pd.GetCheckBox("AnalysisPropertiesForm", "MeansInterceptsCheck").Checked = True
 
             'Fits the specified model.
             Amos.pd.AnalyzeCalculateEstimates()
-
-            'Produce the output
-            LessHTML()
-
         ElseIf intButton = 7 Then
             'Ensure Mods and ResidualMom are checked
             Amos.pd.GetCheckBox("AnalysisPropertiesForm", "ModsCheck").Checked = True
@@ -67,20 +56,18 @@ Public Class FitClass
 
             'Fits the specified model.
             Amos.pd.AnalyzeCalculateEstimates()
-
-            'Produce the output
-            CreateHTML()
-        Else
-            Exit Function
         End If
+
+        'Produce the output
+        CreateHTML()
 
     End Function
 
 #Region "Helper Functions"
 
     Sub CreateHTML()
-        If (System.IO.File.Exists("ModelFit.html")) Then
-            System.IO.File.Delete("ModelFit.html")
+        If (System.IO.File.Exists("Invariance.html")) Then
+            System.IO.File.Delete("Invariance.html")
         End If
 
         Dim estimates As Estimates = GetEstimates()
@@ -89,7 +76,7 @@ Public Class FitClass
 
         'Set up the listener To output the debugs
         Dim debug As New AmosDebug.AmosDebug
-        Dim resultWriter As New TextWriterTraceListener("ModelFit.html")
+        Dim resultWriter As New TextWriterTraceListener("Invariance.html")
         Trace.Listeners.Add(resultWriter)
 
         'Write the beginning Of the document
@@ -128,17 +115,19 @@ Public Class FitClass
             bBad = True
         End If
 
-        debug.PrintX("<tr><td>SRMR</td><td>" + estimates.SRMR.ToString("#0.000") + "</td><td><0.08</td><td>")
+        If Not bMissingData Then
+            debug.PrintX("<tr><td>SRMR</td><td>" + estimates.SRMR.ToString("#0.000") + "</td><td><0.08</td><td>")
 
-        If estimates.SRMR < 0.08 Then
-            debug.PrintX("Excellent</td></tr>")
-        ElseIf estimates.SRMR < 0.1 Then
-            debug.PrintX("Acceptable</td></tr>")
-        ElseIf estimates.SRMR = Nothing Then
-            debug.PrintX("Not Estimated</td></tr>")
-        Else
-            debug.PrintX("Terrible</td></tr>")
-            bBad = True
+            If estimates.SRMR < 0.08 Then
+                debug.PrintX("Excellent</td></tr>")
+            ElseIf estimates.SRMR < 0.1 Then
+                debug.PrintX("Acceptable</td></tr>")
+            ElseIf estimates.SRMR = Nothing Then
+                debug.PrintX("Not Estimated</td></tr>")
+            Else
+                debug.PrintX("Terrible</td></tr>")
+                bBad = True
+            End If
         End If
 
         debug.PrintX("<tr><td>RMSEA</td><td>" + estimates.Rmsea.ToString("#0.000") + "</td><td><0.06</td><td>")
@@ -186,7 +175,9 @@ Public Class FitClass
         debug.PrintX("<hr/><h3> Cutoff Criteria*</h3><table><tr><th>Measure</th><th>Terrible</th><th>Acceptable</th><th>Excellent</th></tr>")
         debug.PrintX("<tr><td>CMIN/DF</td><td>> 5</td><td>> 3</td><td>> 1</td></tr>")
         debug.PrintX("</td></tr><tr><td>CFI</td><td><0.90</td><td><0.95</td><td>>0.95</td></tr>")
-        debug.PrintX("</td></tr><tr><td>SRMR</td><td>>0.10</td><td>>0.08</td><td><0.08</td></tr>")
+        If Not bMissingData Then
+            debug.PrintX("</td></tr><tr><td>SRMR</td><td>>0.10</td><td>>0.08</td><td><0.08</td></tr>")
+        End If
         debug.PrintX("</td></tr><tr><td>RMSEA</td><td>>0.08</td><td>>0.06</td><td><0.06</td></tr>")
         debug.PrintX("</td></tr><tr><td>PClose</td><td><0.01</td><td><0.05</td><td>>0.05</td></tr></table>")
         debug.PrintX("<p>*Note: Hu and Bentler (1999, ""Cutoff Criteria for Fit Indexes in Covariance Structure Analysis: Conventional Criteria Versus New Alternatives"") recommend combinations of measures. Personally, I prefer a combination of CFI>0.95 and SRMR<0.08. To further solidify evidence, add the RMSEA<0.06.</p>")
@@ -202,120 +193,7 @@ Public Class FitClass
         Trace.Listeners.Remove(resultWriter)
         resultWriter.Close()
         resultWriter.Dispose()
-        Process.Start("ModelFit.html")
-    End Sub
-
-    Sub LessHTML()
-        If (System.IO.File.Exists("ModelFit.html")) Then
-            System.IO.File.Delete("ModelFit.html")
-        End If
-
-        Dim estimates As Estimates = GetEstimates()
-
-        Dim listValues As List(Of varSummed) = GetLowestIndicator()
-
-        'Set up the listener To output the debugs
-        Dim debug As New AmosDebug.AmosDebug
-        Dim resultWriter As New TextWriterTraceListener("ModelFit.html")
-        Trace.Listeners.Add(resultWriter)
-
-        'Write the beginning Of the document
-        debug.PrintX("<html><body><h1>Model Fit Measures</h1><hr/>")
-
-        'Populate model fit measures in data table
-        debug.PrintX("<table><tr><th>Measure</th><th>Estimate</th><th>Threshold</th><th>Interpretation</th></tr>")
-
-        debug.PrintX("<tr><td>CMIN</td><td>" + estimates.Cmin.ToString("#0.000") + "</td><td>--</td><td>--</td></tr>")
-        debug.PrintX("<tr><td>DF</td><td>" + estimates.Df.ToString("#0.000") + "</td><td>--</td><td>--</td></tr>")
-        debug.PrintX("<tr><td>CMIN/DF</td><td>" + estimates.CD.ToString("#0.000") + "</td><td>Between 1 and 3</td><td>")
-
-        If estimates.CD < 1 Then
-            debug.PrintX("Need more DF</td></tr>")
-        ElseIf estimates.CD >= 1 And estimates.CD <= 3 Then
-            debug.PrintX("Excellent</td></tr>")
-        ElseIf estimates.CD <= 5 Then
-            debug.PrintX("Acceptable</td></tr>")
-        ElseIf estimates.CD = Nothing Then
-            debug.PrintX("Not Estimated</td></tr>")
-        Else
-            debug.PrintX("Terrible</td></tr>")
-            bBad = True
-        End If
-
-        debug.PrintX("<tr><td>CFI</td><td>" + estimates.CFI.ToString("#0.000") + "</td><td>>0.95</td><td>")
-
-        If estimates.CFI > 0.95 Then
-            debug.PrintX("Excellent</td></tr>")
-        ElseIf estimates.CFI > 0.9 Then
-            debug.PrintX("Acceptable</td></tr>")
-        ElseIf estimates.CFI = Nothing Then
-            debug.PrintX("Not Estimated</td></tr>")
-        Else
-            debug.PrintX("Terrible</td></tr>")
-            bBad = True
-        End If
-
-        debug.PrintX("<tr><td>RMSEA</td><td>" + estimates.Rmsea.ToString("#0.000") + "</td><td><0.06</td><td>")
-
-        If estimates.Rmsea < 0.06 Then
-            debug.PrintX("Excellent</td></tr>")
-        ElseIf estimates.Rmsea < 0.08 Then
-            debug.PrintX("Acceptable</td></tr>")
-        ElseIf estimates.Rmsea = Nothing Then
-            debug.PrintX("Not Estimated</td></tr>")
-        Else
-            debug.PrintX("Terrible</td></tr>")
-            bBad = True
-        End If
-
-        debug.PrintX("<tr><td>PClose</td><td>" + estimates.Pclose.ToString("#0.000") + "</td><td>>0.05</td><td>")
-
-        If estimates.Pclose > 0.05 Then
-            debug.PrintX("Excellent</td></tr>")
-        ElseIf estimates.Pclose > 0.01 Then
-            debug.PrintX("Acceptable</td></tr>")
-        ElseIf estimates.Pclose = Nothing Then
-            debug.PrintX("Not Estimated</td></tr>")
-        Else
-            debug.PrintX("Terrible</td></tr>")
-            bBad = True
-        End If
-
-        debug.PrintX("</table><br>")
-
-        'Check standardized residual covariances table for the indicator with largest sum of absolute values.
-        If bMid = False And bBad = False Then
-            debug.PrintX("Congratulations, your model fit is excellent!")
-        ElseIf bMid = True And bBad = False Then
-            debug.PrintX("Congratulations, your model fit is acceptable.")
-        Else
-            debug.PrintX("Your model fit could improve. Based on the standardized residual covariances, we recommend removing " + listValues.First.Name + ".")
-        End If
-
-        If bConstraint = True Then
-            debug.PrintX("<br>This indicator has a path constraint. You will need to change the constraint after removing " + listValues.First.Name + ".")
-        End If
-
-        'Write reference table and credits
-        debug.PrintX("<hr/><h3> Cutoff Criteria*</h3><table><tr><th>Measure</th><th>Terrible</th><th>Acceptable</th><th>Excellent</th></tr>")
-        debug.PrintX("<tr><td>CMIN/DF</td><td>> 5</td><td>> 3</td><td>> 1</td></tr>")
-        debug.PrintX("</td></tr><tr><td>CFI</td><td><0.90</td><td><0.95</td><td>>0.95</td></tr>")
-        debug.PrintX("</td></tr><tr><td>RMSEA</td><td>>0.08</td><td>>0.06</td><td><0.06</td></tr>")
-        debug.PrintX("</td></tr><tr><td>PClose</td><td><0.01</td><td><0.05</td><td>>0.05</td></tr></table>")
-        debug.PrintX("<p>*Note: Hu and Bentler (1999, ""Cutoff Criteria for Fit Indexes in Covariance Structure Analysis: Conventional Criteria Versus New Alternatives"") recommend combinations of measures. Personally, I prefer a combination of CFI>0.95 and SRMR<0.08. To further solidify evidence, add the RMSEA<0.06.</p>")
-        debug.PrintX("<p>**If you would like to cite this tool directly, please use the following:")
-        debug.PrintX("Gaskin, J. & Lim, J. (2016), ""Model Fit Measures"", AMOS Plugin. <a href=\""http://statwiki.kolobkreations.com"">Gaskination's StatWiki</a>.</p>")
-
-        'Write Style And close
-        debug.PrintX("<style>h1{margin-left:60px;}table{border:1px solid black;border-collapse:collapse;}td{border:1px solid black;text-align:center;padding:5px;}th{text-weight:bold;padding:10px;border: 1px solid black;}</style>")
-        debug.PrintX("</body></html>")
-
-        'Take down our debugging, release file, open html
-        Trace.Flush()
-        Trace.Listeners.Remove(resultWriter)
-        resultWriter.Close()
-        resultWriter.Dispose()
-        Process.Start("ModelFit.html")
+        Process.Start("Invariance.html")
     End Sub
 
     Function GetEstimates() As Estimates
@@ -325,11 +203,17 @@ Public Class FitClass
 
         'Get CFI from Baseline Comparisions table
         Dim CFI As XmlElement = GetXML("body/div/div[@ntype='modelfit']/div[@nodecaption='Baseline Comparisons']/table/tbody/tr[position() = 1]/td[position() = 6]")
+        Dim Rmsea As XmlElement = GetXML("body/div/div[@ntype='modelfit']/div[@nodecaption='RMSEA']/table/tbody/tr[position() = 1]/td[position() = 2]")
+        Dim Pclose As XmlElement = GetXML("body/div/div[@ntype='modelfit']/div[@nodecaption='RMSEA']/table/tbody/tr[position() = 1]/td[position() = 5]")
+
 
         'Specify and fit the object to the model
         Dim Sem As New AmosEngineLib.AmosEngine
-        Sem.NeedEstimates(SampleCorrelations)
-        Sem.NeedEstimates(ImpliedCorrelations)
+        If Not bMissingData Then
+            Sem.NeedEstimates(SampleCorrelations)
+            Sem.NeedEstimates(ImpliedCorrelations)
+        End If
+
         Amos.pd.SpecifyModel(Sem)
         Sem.FitModel()
 
@@ -341,52 +225,31 @@ Public Class FitClass
         Dim Sample(,) As Double
         Dim Implied(,) As Double
 
-        Sem.GetEstimates(SampleCorrelations, Sample)
-        Sem.GetEstimates(ImpliedCorrelations, Implied)
-        N = UBound(Sample, 1) + 1
-        SRMR = 0
-        For i = 1 To N - 1
-            For j = 0 To i - 1
-                SRMR = SRMR + (Sample(i, j) - Implied(i, j)) ^ 2
+        If Not bMissingData Then
+            Sem.GetEstimates(SampleCorrelations, Sample)
+            Sem.GetEstimates(ImpliedCorrelations, Implied)
+            N = UBound(Sample, 1) + 1
+            SRMR = 0
+            For i = 1 To N - 1
+                For j = 0 To i - 1
+                    SRMR = SRMR + (Sample(i, j) - Implied(i, j)) ^ 2
+                Next
             Next
-        Next
-        SRMR = System.Math.Sqrt(SRMR / (N * (N - 1) / 2))
+            SRMR = System.Math.Sqrt(SRMR / (N * (N - 1) / 2))
+        End If
 
         estimates.Cmin = Sem.Cmin
         estimates.Df = Sem.Df
         estimates.CD = Sem.Cmin / Sem.Df
         estimates.CFI = CFI.InnerText
         estimates.SRMR = SRMR
-        estimates.Rmsea = Sem.Rmsea
-        estimates.Pclose = Sem.Pclose
+        estimates.Rmsea = Rmsea.InnerText
+        estimates.Pclose = Pclose.InnerText
 
         Sem.Dispose()
 
         Return estimates
 
-    End Function
-
-    Function DualData() As DualEstimates
-        'Array to hold estimates
-        Dim estimates As DualEstimates
-
-        'Get CFI from Baseline Comparisions table
-        Dim CFI As XmlElement = GetXML("body/div/div[@ntype='modelfit']/div[@nodecaption='Baseline Comparisons']/table/tbody/tr[position() = 1]/td[position() = 6]")
-
-        'Specify and fit the object to the model
-        Dim Sem As New AmosEngineLib.AmosEngine
-        Amos.pd.SpecifyModel(Sem)
-        Sem.FitModel()
-
-        estimates.Cmin = Sem.Cmin
-        estimates.Df = Sem.Df
-        estimates.CFI = CFI.InnerText
-        estimates.Rmsea = Sem.Rmsea
-        estimates.Pclose = Sem.Pclose
-
-        Sem.Dispose()
-
-        Return estimates
     End Function
 
     Function GetLowestIndicator() As List(Of varSummed)
@@ -464,29 +327,6 @@ Public Class FitClass
 
         Return listValues
 
-    End Function
-
-    '
-    Function interpret(good As Double, mid As Double, bad As Double, estimate As Double, dfCheck As Boolean) As String
-        Dim interpretation As String
-        'IF CMIN/DF < 1 Then needs more DF
-        Select Case estimate
-            Case Is > good
-                interpretation = "Excellent"
-            Case Is > mid
-                interpretation = "Acceptable"
-                bMid = True
-            Case Is < 1 And dfCheck = True
-                interpretation = "Need more DF"
-                bBad = True
-            Case Is = Nothing
-                interpretation = "Not Estimated"
-            Case Else
-                interpretation = "Terrible"
-                bBad = True
-        End Select
-
-        interpret = interpretation
     End Function
 
     'Use an output table path to get the xml version of the table.
